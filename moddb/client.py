@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, List, Tuple, Union
 
 import requests
 from bs4 import BeautifulSoup
-from pyrate_limiter import Duration, Limiter, RequestRate
+from pyrate_limiter import Duration, Limiter, Rate, BucketFullException, LimiterDelayException
 
 from .base import parse_page
 from .boxes import ResultList, Thumbnail, _parse_results
@@ -27,7 +27,7 @@ from .utils import (
     get_siteareaid,
     join,
     raise_for_status,
-    limiter,
+    limiter_decorator,
     soup,
     user_agent_list,
 )
@@ -37,8 +37,7 @@ if TYPE_CHECKING:
     from .enums import WatchType
     from .pages import Engine, Game, Group, Mod, Review, Team
 
-COMMENT_LIMITER = Limiter(RequestRate(1, Duration.MINUTE))
-
+COMMENT_LIMITER = Limiter(Rate(1, Duration.MINUTE), raise_when_fail=False, max_delay=10000000)
 
 class Message:
     """A single message within a thread.
@@ -80,7 +79,7 @@ class Thread:
         * **hasreplied** - order by whether or not you have replied to the message, asc us unreplied first, desc is replied first
 
     Attributes
-    -----------
+    ----------
     name : str
         Name of the thread
     id : int
@@ -312,7 +311,10 @@ class Client:
         sys.modules["moddb"].SESSION = self._fake_session
         delattr(self, "_fake_session")
 
-    @limiter.ratelimit("moddb", delay=True)
+    def mapping(*args, **kwargs):
+        return "moddb", 1
+
+    @limiter_decorator(mapping)
     def _request(self, method, url, **kwargs):
         """Making sure we do our request with the cookies from this client rather than the cookies
         of the library."""
